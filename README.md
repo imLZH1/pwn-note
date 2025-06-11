@@ -2,8 +2,8 @@
 
 # Pwn Study Notes
 
-[![GitHub stars](https://img.shields.io/github/stars/yourusername/pwn-note?style=social)](https://github.com/yourusername/pwn-note)
-[![GitHub last commit](https://img.shields.io/github/last-commit/yourusername/pwn-note)](https://github.com/yourusername/pwn-note)
+[![GitHub stars](https://img.shields.io/github/stars/imLZH1/pwn-note?style=social)](https://github.com/imLZH1/pwn-note)
+[![GitHub last commit](https://img.shields.io/github/last-commit/imLZH1/pwn-note)](https://github.com/imLZH1/pwn-note)
 
 这是我的CTF-Pwn学习笔记集合,他应该适合新手入门，包含各种漏洞利用技术、工具使用和技巧总结。
 
